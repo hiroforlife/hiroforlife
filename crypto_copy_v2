@@ -1,0 +1,209 @@
+import re   # Importation des modules necessaire, re et playwright et time
+from playwright.sync_api import sync_playwright
+import time
+import requests
+
+while True:
+    with sync_playwright() as p:  # On definis que la fonction playwright doit etre utilisé avec le mot clé "p" pour faciliter l'écriture
+
+        # Creation d'une variable "browser" avec laquelle on va pouvoir manipuler la page google chrome
+        browser = p.chromium.launch(headless=False)
+
+    # Creation d'une variable "page" qui nous permet d'utiliser la fonction ".new_page()" contenue dans "browser"
+        page = browser.new_page()
+
+    # On utilise la fonction ".goto" qui nous envoie a l'url desirer
+        page.goto('https://www.binance.com/fr/futures-activity/leaderboard/user?encryptedUid=FAD84AAFD6E43900BF15E06B21857715')
+
+    # On clique sur le pop up cookie si il y en a un pour permettre l'utilisation de la page
+        page.locator('"Autoriser tous les cookies"').click()
+
+    # Timeout de 1000 milliseconde pour que la page soit entierement chargé pour ne pas oublier des données
+        page.wait_for_timeout(1000)
+
+    # Recuperation sous forme de liste des elements html de la page a l'endroit "//table/tbody/tr"
+        trs_list = page.query_selector_all("//table/tbody/tr")
+
+    # Initialisation de la variable "master_list" qui contiendra nos elements souhaités
+        master_list = []
+
+        '''
+    Pour mieux comprendre comment nous recuperons les valeurs souhaité du site web, se referer a la page source html
+
+    Premiere accessibilité de la balise table, sans chemin d'acces grace a "//table"
+    Puis la balise "/tbody"
+    Puis les balise "tr" que nous recuperons sous formes de liste
+
+    Nous accedond ensuite au balise "tr" contenue dans les balise "td" que nous recuperons eux aussi sous forme de liste, nous travaillons ensuite avec les données recuperer
+        '''
+
+        for tr in trs_list:  # Parcour de la liste "trs_list" contenant les elements "td" que nous souhaitons recuperer
+
+            dict = {}  # Creation d'un dictionnaire qui nous permettra d'obtenir nos "clé" et "valeur" lorsque l'on parcourera la liste "trs_list"
+
+        # Creation d'une variable "tds" qui nous permet de recuperer sous forme de liste les valeur des contenue "tr" de la page html
+            tds = tr.query_selector_all('//td')
+
+            '''
+        On recuperes les données qui nous interresse en les integrants dans notre dictionnaire clé valeurs
+        Grace a la boucle for, on recupere pour chaque "tr" les symbole/direction/leverage, la taille, le prix d'entrée, la date/heure grace a leur positon dans la liste que nous parouront
+            '''
+
+            dict['Symbole/Direction/Leverage'] = tds[0].inner_text()
+            dict['Taille'] = tds[1].inner_text()
+            dict["Prix d'entrée"] = tds[2].inner_text
+            dict["Date/heure"] = tds[5].inner_text
+
+        # On ajoute ensuite dans notre dictionnaire toutes les infos recuperer, pour chaque tour de boucle, donc chaque "tr" rencontrée, ou plus precisement, chaque ligne de la colonne des postions ouverte
+            master_list.append(dict)
+    
+        browser.close()  # On ferme la page qui a été ouverte car les données on été recuperer, nous allons desormais travailler avec les données recuperer
+
+
+    def obtenir_nombre(dictio):  # Creation d'une fonction qui nous permet de n'obtenir que les valeurs voulu pour les clé valeurs "Prix d'entrée" et " Date/Heure" car je recupere des infos que je ne souhaite pas, donc je les exclus
+  # re nous renvoie un liste avec les elements trouvée
+        valeur_nombre = re.findall('>(.*?)<', dictio)
+  # Transoformation de cette liste en str avec ".join"
+        return (' '.join(valeur_nombre))
+
+
+# On recupere la taille de la liste pour faire une boucle ensuite
+    nombre_de_position_actuellement_ouverte = len(master_list)
+
+
+# Integration dans le fichier les positions recuperer et contenue dans le dictionnaire
+    def ajout_de_position_dans_fichier(fichier_ou_mettre_les_positions):
+    # Ouverture avec ecrasement des données precedente du fichier cible
+        fichier = open(fichier_ou_mettre_les_positions, "w")
+    # On ajoute "" pour crée un fichier vide, ce qui permet d'ecraser les anciennes donnée pour append ( ajouter ) les nouvelles
+        fichier.write("")
+        fichier.close()  # Fermeture fichier
+
+        index = 0  # Creation d'un index qui nous permettra d'avancée proprement dans notre iteration a travers le dictionnaire
+    # Definition d'une condition qui nous permet d'aller jusqu'a la derniere postion ouverte avant d'arreter la boucle
+        while index < nombre_de_position_actuellement_ouverte:
+
+        # Creation d'une variable qui contient la ligne indiqué par l'index dans le dictionnaire ( explication détaillé en dessous)
+            position_contenue_dans_le_dictionaire = master_list[index]
+
+            '''
+        On definis ici deux variable "prix_d_entree_en_str" et "date_heure_en_str" qui vont contenir en str ( important )
+        la valeur de la clé "Prix d'entrée" et "Date/Heure" Respectivement
+        Ces variables vont nous permettre de modifier la valeur que l'on obtient de base qui n'est pas entierement necessaire,
+        et justement obtenir seulement les valeurs dont on a besoins
+        
+            '''
+            prix_d_entree_en_str = str(position_contenue_dans_le_dictionaire["Prix d'entrée"])
+            date_heure_en_str = str(position_contenue_dans_le_dictionaire["Date/heure"])
+
+        # On remplace donc dans le dictionaire la valeur que l'on ne souhaite pas, par la valeur qui nous est utile
+            position_contenue_dans_le_dictionaire["Prix d'entrée"] = obtenir_nombre(prix_d_entree_en_str)
+        # La fonction definis auparavant avec l'utilisation des expression reguliere est donc utilisé pour virer toutes les choses inutiles
+            position_contenue_dans_le_dictionaire["Date/heure"] = obtenir_nombre(date_heure_en_str)
+
+        # On ouvre le fichier en mode "a" qui nous permet d'ajouter a la suite sans ecraser les donnée precedente.
+            fichier = open(fichier_ou_mettre_les_positions, "a")
+        # On ajoute donc une par une les positions du dictionaire dans le fichier en string, car sinon on ne peut pas
+            fichier.write(str(position_contenue_dans_le_dictionaire))
+        # On saute une ligne pour chaque valeur rentrée, cela va nous servir par la suite
+            fichier.write("\n")
+            index += 1
+    # Les actions effectué en dessous ne sont valable qu'une fois que la boucle est terminée ( da da )
+        fichier.close()  # On ferme le fichier une fois toutes les actions executé
+
+
+    ajout_de_position_dans_fichier(fichier_ou_mettre_les_positions="C:/Users/theo-/Desktop/nouvelle_valeur_rankUn.txt")
+
+
+    fichier_newvalue_rankUn = open("C:/Users/theo-/Desktop/nouvelle_valeur_rankUn.txt", "r")
+    nouvelle_valeur_rankUn = fichier_newvalue_rankUn.read()
+    fichier_newvalue_rankUn.close()
+
+    fichier_source_rankUn = open("C:/Users/theo-/Desktop/valeur_source_rankUn.txt", "r")
+    valeur_source_rankUn = fichier_source_rankUn.read()
+    fichier_source_rankUn.close()
+
+    valeur_source_en_liste = valeur_source_rankUn.split("\n")
+    valeur_nouvelle_en_liste = nouvelle_valeur_rankUn.split("\n")
+
+    def position_ouverte():
+        index = 0
+        position = []
+        while index < len(valeur_nouvelle_en_liste):
+            if valeur_nouvelle_en_liste[index] in valeur_source_en_liste:
+                pass
+            else:
+                position.append(valeur_nouvelle_en_liste[index])
+            index += 1
+        return position
+    
+    def position_ferme():
+        index = 0
+        position = []
+        while index < len(valeur_source_en_liste):
+            if valeur_source_en_liste[index] in valeur_nouvelle_en_liste:
+                pass
+            else:
+                position.append(valeur_source_en_liste[index])
+            index += 1
+        return position
+
+    def send_to_telegram(message):
+
+        apiToken = '5911975090:AAHK31_weeoA4CULIpJNJb9H90H_L5a5dfo'
+        chatID = '-1001822087629'
+        apiURL = f'https://api.telegram.org/bot{apiToken}/sendMessage'
+
+        try:
+            response = requests.post(apiURL, json={'chat_id': chatID, 'text': message})
+            print(response.text)
+        except Exception as e:
+            print(e)
+    
+    symbole_des_position_ouverte = position_ouverte()
+    symbole_des_position_fermee = position_ferme()
+    
+    def send_to_telegram_en_propre(symbole_position_avec_index):
+
+        string_symbole = str(symbole_position_avec_index)
+        mise_en_liste_de_la_chaine = string_symbole.split(' ')
+        print(mise_en_liste_de_la_chaine)
+        symbole = mise_en_liste_de_la_chaine[1][1:]
+        direction_levier_en_str = str(mise_en_liste_de_la_chaine[2])
+        direction_levier_en_liste = direction_levier_en_str.split("\\")
+        direction = direction_levier_en_liste[1][1:]
+        levier = direction_levier_en_liste[2][1:4]
+        prix_d_entree = mise_en_liste_de_la_chaine[7].replace(",", "")
+        print(prix_d_entree)
+        return symbole, direction, levier, prix_d_entree
+    
+
+    index = 0
+    if len(symbole_des_position_ouverte) > 0:
+        while index < len(symbole_des_position_ouverte):
+            symbole, direction, levier, prix_entree = send_to_telegram_en_propre(symbole_position_avec_index=symbole_des_position_ouverte[index])
+            send_to_telegram("BeraGrizzly RANK 1 viens d'ouvrir une position sur la paire : " + symbole + "\nAvec une direction en : "
+            + direction + "\nLe levier est en : " + levier + "\n Le prix d'entrée était de : " + prix_entree)
+            index += 1
+    else:
+        pass
+    index = 0
+
+    if len(symbole_des_position_fermee) > 0:
+        while index < len(symbole_des_position_fermee):
+            symbole, direction, levier, prix_entree = send_to_telegram_en_propre(symbole_position_avec_index=symbole_des_position_fermee[index])
+            send_to_telegram("BeraGrizzly RANK 1 viens d'ouvrir une position sur la paire : " + symbole + "\nAvec une direction : "
+            + direction + "\nUn effet de levier de : " + levier + "\nLe prix d'entrée était de : " + prix_entree)
+            index += 1
+    else:
+        pass
+
+    if len(symbole_des_position_fermee) > 0 or len(symbole_des_position_ouverte) > 0:
+        
+        fichier = open("C:/Users/theo-/Desktop/valeur_source_rankUn.txt", "w")
+        fichier.write(nouvelle_valeur_rankUn)
+        fichier.close()
+    else:
+        send_to_telegram("Aucune position n'a été ouverte ou fermée depuis la derniere verification !")
+
+    time.sleep(60)
